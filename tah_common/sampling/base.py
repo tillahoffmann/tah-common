@@ -1,8 +1,6 @@
 import numpy as np
-from matplotlib import pyplot as plt
-from scipy.stats import gaussian_kde
+from ..plot import trace_plot, density_plot
 import pandas as pd
-import itertools as it
 
 
 class ReportCallback(object):
@@ -82,32 +80,8 @@ class BaseSampler(object):
         values : iterable
             true values corresponding to the indices in `parameters`
         """
-
-        if parameters is None:
-            parameters = np.arange(self.samples.shape[1])
-        if values is None:
-            values = []
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, True)
-
-        # Plot the trace
-        for parameter, value in it.izip_longest(parameters, values, fillvalue=None):
-            line, = ax1.plot(self.samples[burn_in:, parameter], label=self.get_parameter_name(parameter))
-            # Plot the true values
-            if value is not None:
-                ax1.axhline(value, ls='dotted', color=line.get_color())
-
-        ax1.set_xlabel('Iterations')
-        ax1.set_ylabel('Parameter values')
-        ax1.legend(loc=0, frameon=False)
-
-        ax2.plot(self.fun_values[burn_in:])
-        ax2.set_xlabel('Iterations')
-        ax2.set_ylabel('Function values')
-
-        fig.tight_layout()
-
-        return fig, (ax1, ax2)
+        return trace_plot(self.samples, self.fun_values, burn_in, None if parameters is None else
+            {p: self.get_parameter_name(p) for p in parameters}, values)
 
     def density_plot(self, burn_in=0, parameters=None, values=None, nrows=None, ncols=None, bins=10):
         """
@@ -128,42 +102,8 @@ class BaseSampler(object):
         bins : int
             number of bins for the histograms
         """
-        if parameters is None:
-            parameters = np.arange(self.samples.shape[1])
-        if values is None:
-            values = []
-
-        # Determine the number of rows and columns if not specified
-        n = len(parameters)
-        if nrows is None and ncols is None:
-            ncols = int(np.ceil(np.sqrt(n)))
-            nrows = int(np.ceil(float(n) / ncols))
-        elif nrows is None:
-            nrows = int(np.ceil(float(n) / ncols))
-        elif ncols is None:
-            ncols = int(np.ceil(float(n) / nrows))
-
-        fig, axes = plt.subplots(nrows, ncols)
-
-        # Plot all parameters
-        for ax, parameter, value in it.izip_longest(np.ravel(axes), parameters, values, fillvalue=None):
-            x = self.samples[burn_in:, parameter]
-            ax.hist(x, bins, normed=True, histtype='stepfilled', facecolor='silver')
-
-            min_x, max_x = np.min(x), np.max(x)
-            rng_x = max_x - min_x
-            lin_x = np.linspace(min_x - 0.1 * rng_x, max_x + 0.1 * rng_x)
-            kde = gaussian_kde(x)
-            ax.plot(lin_x, kde(lin_x), color='blue')
-            ax.set_title(self.get_parameter_name(parameter))
-
-            # Plot true values
-            if value is not None:
-                ax.axvline(value, ls='dotted')
-
-        fig.tight_layout()
-
-        return fig, axes
+        return density_plot(self.samples, burn_in, None if parameters is None else
+            {p: self.get_parameter_name(p) for p in parameters}, values, nrows, ncols, bins)
 
     def acceptance_rate(self, burn_in=0):
         """

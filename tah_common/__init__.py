@@ -1,3 +1,2 @@
-import sampling
-import util
+import sampling, util, plot
 from pipeline import Pipeline
