@@ -45,6 +45,10 @@ def density_plot(samples, burn_in=0, parameters=None, values=None, nrows=None, n
 
     # Plot all parameters
     for ax, parameter, value in it.izip_longest(np.ravel(axes), parameters, values, fillvalue=None):
+        # Skip if we have run out of parameters
+        if parameter is None:
+            break
+
         x = samples[burn_in:, parameter]
         ax.hist(x, bins, normed=True, histtype='stepfilled', facecolor='silver')
 

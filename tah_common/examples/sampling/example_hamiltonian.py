@@ -11,7 +11,7 @@ parameter_names = [r'$\mu_{{{0}}}$'.format(i + 1) for i in range(len(mean))]
 
 # Initialise the adaptive metropolis sampler
 mass = 1.0 / variance
-sampler = HamiltonianSampler(normal_log_posterior, (mean, variance), parameter_names, normal_log_posterior_jac, mass)
+sampler = HamiltonianSampler(normal_log_posterior, (mean, variance), parameter_names, jac=normal_log_posterior_jac, mass=mass)
 # Obtain 2000 samples
 sampler.sample(mean, 2000)
 
