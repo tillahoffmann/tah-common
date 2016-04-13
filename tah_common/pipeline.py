@@ -27,6 +27,7 @@ class Pipeline(object):
         self.argument_parser = ArgumentParser(name)
         self.argument_parser.add_argument('--force', '-f', help='reevaluate all commands', action='store_true',
                                           default=False)
+        self.argument_parser.add_argument('--out', '-o', help="override output filename", type=str)
         self.argument_parser.add_argument('configuration_file', type=str, help='path to a JSON configuration file')
         self.argument_parser.add_argument('commands', type=str, nargs='+', help='commands to evaluate')
 
@@ -88,8 +89,11 @@ class Pipeline(object):
             self.logger.critical(ex.message)
             raise
 
-        # Update the output file
-        if 'result_file' not in configuration:
+        # Override the output file
+        if self.arguments.out:
+            configuration['result_file'] = self.arguments.out
+        # Get a default output file
+        elif 'result_file' not in configuration:
             base, ext = path.splitext(self.arguments.configuration_file)
             configuration['result_file'] = base + '_result.json'
 
