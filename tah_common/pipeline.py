@@ -1,4 +1,4 @@
-from .util import json_load, json_loads, json_dump, read
+from .util import json_load, json_loads, json_dump, read, recursive_update
 from argparse import ArgumentParser
 import logging, hashlib
 from sys import stdout
@@ -35,6 +35,38 @@ class Pipeline(object):
         self.logger.setLevel(logging_level)
         self.logger.addHandler(logging.StreamHandler(stdout))
 
+    def _setup(self, configuration):
+        """
+        Perform additional setup before evaluating commands.
+        """
+        pass
+
+    def _get_configuration(self, key):
+        """
+        Get the configuration for a command.
+        Parameters
+        ----------
+        key : str
+            the command to get the configuration for
+        """
+        # Empty values
+        if key not in self.configuration:
+            return {}
+
+        # Get the configuration recursively
+        if isinstance(self.configuration[key], basestring):
+            configuration = self._get_configuration(self.configuration[key])
+        else:
+            configuration = self.configuration[key]
+
+        # Check type
+        if not isinstance(configuration, dict):
+            msg = "configuration for '{}' must be a dictionary".format(key)
+            self.logger.critical(msg)
+            raise ValueError(msg)
+
+        return configuration
+
     def _default_configuration(self):
         """
         Get the default configuration.
@@ -50,7 +82,7 @@ class Pipeline(object):
         # Load the configuration and compute the hash
         try:
             text = read(self.arguments.configuration_file)
-            configuration.update(json_loads(text))
+            recursive_update(configuration, json_loads(text))
             configuration_hash = hashlib.sha256(text).hexdigest()
         except IOError as ex:
             self.logger.critical(ex.message)
@@ -58,7 +90,7 @@ class Pipeline(object):
 
         # Update the output file
         if 'result_file' not in configuration:
-            base, ext = path.split(self.arguments.configuration_file)
+            base, ext = path.splitext(self.arguments.configuration_file)
             configuration['result_file'] = base + '_result.json'
 
         return configuration, configuration_hash
@@ -87,8 +119,12 @@ class Pipeline(object):
         Dump the result of the pipeline to disk.
         """
         # Ensure the directory exists
-        makedirs(path.dirname(self.configuration['result_file']))
-        json_dump(self.result, self.configuration['result_file'])
+        dirname = path.dirname(self.configuration['result_file'])
+        if dirname:
+            makedirs(dirname)
+        # Dump the results to disk
+        self.logger.info("dumping results to '{}'".format(self.configuration['result_file']))
+        json_dump(self.result, self.configuration['result_file'], indent=2)
 
     def run(self):
         """
@@ -100,10 +136,13 @@ class Pipeline(object):
         self.configuration, self.configuration_hash = self._load_configuration()
         # Get previous results
         self.result = self._load_result()
+        # Additional setup
+        self._setup(self.configuration.get('setup', {}))
         # Iterate over all commands and execute them
         for command in self.arguments.commands:
             self.result[command] = self._evaluate(command)
 
+        self._dump_result()
         self.logger.info('Exit')
 
     def _evaluate(self, command):
@@ -129,7 +168,8 @@ class Pipeline(object):
             self.logger.info("begin command '{}'".format(command))
 
         # Execute the command
-        result = self._commands[command]()
+        fun, args = self._commands[command]
+        result = fun(self._get_configuration(command), *args)
 
         self.logger.info("end command '{}'".format(command))
         return result
