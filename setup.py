@@ -7,6 +7,7 @@ def read(fn):
     with open(path.join(dir, fn)) as fp:
         return fp.read()
 
+
 setup(
     name='tah_common',
     version=read('VERSION'),

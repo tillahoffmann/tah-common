@@ -150,9 +150,22 @@ def json_load(f, encoding=None, cls=None, object_hook=None, parse_float=None, pa
 
     return result
 
-def json_dump(obj, f, skipkeys=False, ensure_ascii=True, check_circular=True,
-              allow_nan=True, cls=None, indent=None, separators=None,
-              encoding='utf-8', default=None, sort_keys=False, **kwargs):
+
+def json_loads(s, encoding=None, cls=None, object_hook=None, parse_float=None, parse_int=None, parse_constant=None,
+               object_pairs_hook=None, **kwargs):
+    """
+    Convenience function to load JSON from a string.
+
+    Notes
+    -----
+    See json.loads for details of the parameters.
+    """
+    return json.loads(s, encoding, cls, object_hook or json_numpy_obj_hook, parse_float, parse_int, parse_constant,
+                      object_pairs_hook, **kwargs)
+
+
+def json_dump(obj, f, skipkeys=False, ensure_ascii=True, check_circular=True, allow_nan=True, cls=None, indent=None,
+              separators=None, encoding='utf-8', default=None, sort_keys=False, **kwargs):
     """
     Convenience function to dump JSON.
 
@@ -179,3 +192,16 @@ def json_dump(obj, f, skipkeys=False, ensure_ascii=True, check_circular=True,
     # Close the file if we just opened it
     if isinstance(f, str):
         fp.close()
+
+
+def read(filename):
+    """
+    Read all text from the specified file.
+
+    Parameters
+    ----------
+    filename : str
+        path to read from
+    """
+    with open(filename) as fp:
+        return fp.read()
