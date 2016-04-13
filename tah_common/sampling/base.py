@@ -1,5 +1,5 @@
 import numpy as np
-from ..plot import trace_plot, grid_density_plot
+from ..plotting import trace_plot, grid_density_plot
 import pandas as pd
 
 

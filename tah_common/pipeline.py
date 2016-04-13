@@ -134,6 +134,7 @@ class Pipeline(object):
         """
         Run the pipeline.
         """
+        self.logger.info('{} {}'.format(self.name, vars(self.arguments)))
         # Get the arguments
         self.arguments = self.argument_parser.parse_args()
         # Load the configuration
@@ -167,7 +168,7 @@ class Pipeline(object):
         # Check whether the commands have already been evaluated
         if command in self.result and not self.arguments.force:
             self.logger.info("command '{}' has already been evaluated".format(command))
-            return
+            return self.result[command]
         else:
             self.logger.info("begin command '{}'".format(command))
 
