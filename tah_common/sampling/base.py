@@ -16,15 +16,16 @@ class ReportCallback(object):
     *others : list
         other callbacks to execute
     """
-    def __init__(self, period, *others):
+    def __init__(self, period, format=None, *others):
         self.period = period
+        self.format = format or "Iteration: {}; Parameters: {}"
         self.current = 0
         self.others = others
 
     def __call__(self, parameters):
         self.current += 1
-        if self.current % self.period == 0:
-            print "{}: {}".format(self.current, parameters)
+        if self.period and self.current % self.period == 0:
+            print self.format.format(self.current, parameters)
         # Call all the other callbacks
         for other in self.others:
             other(parameters)
