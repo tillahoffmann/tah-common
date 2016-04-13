@@ -15,6 +15,6 @@ sampler.sample(mean, 2000)
 
 sampler.describe()
 sampler.trace_plot()
-sampler.density_plot()
+sampler.grid_density_plot()
 
 plt.show()

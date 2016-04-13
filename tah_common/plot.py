@@ -5,7 +5,22 @@ from scipy.stats import gaussian_kde
 from .util import autospace
 
 
-def density_plot(samples, burn_in=0, parameters=None, values=None, nrows=None, ncols=None, bins=10):
+def density_plot(samples, burn_in=0, name=None, value=None, bins=10, ax=None):
+    ax = ax or plt.gca()
+
+    ax.hist(samples[burn_in:], bins, normed=True, histtype='stepfilled', facecolor='silver')
+
+    lin_x = autospace(samples[burn_in:])
+    kde = gaussian_kde(samples[burn_in:])
+    ax.plot(lin_x, kde(lin_x), color='blue')
+    ax.set_title(name)
+
+    # Plot true values
+    if value is not None:
+        ax.axvline(value, ls='dotted')
+
+
+def grid_density_plot(samples, burn_in=0, parameters=None, values=None, nrows=None, ncols=None, bins=10):
     """
     Plot the marginal densities of parameters  (and vertical lines indicating the true values).
 
@@ -49,17 +64,9 @@ def density_plot(samples, burn_in=0, parameters=None, values=None, nrows=None, n
         if parameter is None:
             break
 
-        x = samples[burn_in:, parameter]
-        ax.hist(x, bins, normed=True, histtype='stepfilled', facecolor='silver')
+        # Plot the individual density estimate
+        density_plot(samples[:, parameter], burn_in, parameters[parameter], value, bins, ax)
 
-        lin_x = autospace(x)
-        kde = gaussian_kde(x)
-        ax.plot(lin_x, kde(lin_x), color='blue')
-        ax.set_title(parameters[parameter])
-
-        # Plot true values
-        if value is not None:
-            ax.axvline(value, ls='dotted')
 
     fig.tight_layout()
 

@@ -1,5 +1,5 @@
 import numpy as np
-from ..plot import trace_plot, density_plot
+from ..plot import trace_plot, grid_density_plot
 import pandas as pd
 
 
@@ -83,7 +83,7 @@ class BaseSampler(object):
         return trace_plot(self.samples, self.fun_values, burn_in, None if parameters is None else
             {p: self.get_parameter_name(p) for p in parameters}, values)
 
-    def density_plot(self, burn_in=0, parameters=None, values=None, nrows=None, ncols=None, bins=10):
+    def grid_density_plot(self, burn_in=0, parameters=None, values=None, nrows=None, ncols=None, bins=10):
         """
         Plot the marginal densities of parameters  (and vertical lines indicating the true values).
 
@@ -102,7 +102,7 @@ class BaseSampler(object):
         bins : int
             number of bins for the histograms
         """
-        return density_plot(self.samples, burn_in, None if parameters is None else
+        return grid_density_plot(self.samples, burn_in, None if parameters is None else
             {p: self.get_parameter_name(p) for p in parameters}, values, nrows, ncols, bins)
 
     def acceptance_rate(self, burn_in=0):

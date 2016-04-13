@@ -21,6 +21,6 @@ sampler.dynamics_plot(sampler.samples[-1], .02, 400)
 burn_in = 500
 sampler.describe(burn_in)
 sampler.trace_plot(burn_in)
-sampler.density_plot(burn_in)
+sampler.grid_density_plot(burn_in)
 
 plt.show()
