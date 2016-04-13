@@ -205,3 +205,25 @@ def read(filename):
     """
     with open(filename) as fp:
         return fp.read()
+
+
+def recursive_update(self, other):
+    """
+    Update dictionary recursively.
+
+    Parameters
+    ----------
+    self : dict
+        dictionary to update
+    other : dict
+        dictionary to copy values from
+    """
+    for key, value in other.iteritems():
+        # Simply copy the values if the value is not in the original dictionary or if we aren't dealing with dicts
+        if key not in self or not isinstance(value, dict) or not isinstance(self[key], dict):
+            self[key] = value
+        # Perform a recursive update otherwise
+        else:
+            recursive_update(self[key], value)
+
+    return self
