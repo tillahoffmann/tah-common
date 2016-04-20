@@ -1,8 +1,8 @@
-from .util import json_load, json_loads, json_dump, read, recursive_update
+from .util import json_load, json_loads, json_dump, read, recursive_update, mkdir_p, json_dumps, StringEncoder
 from argparse import ArgumentParser
 import logging, hashlib
 from sys import stdout
-from os import path, makedirs
+from os import path
 
 
 class Pipeline(object):
@@ -16,7 +16,7 @@ class Pipeline(object):
     logging_level : int
         logging level for the pipeline
     """
-    def __init__(self, name, logging_level=logging.INFO):
+    def __init__(self, name):
         self.name = name
         self.configuration = None
         self.configuration_hash = None
@@ -28,19 +28,13 @@ class Pipeline(object):
         self.argument_parser.add_argument('--force', '-f', help='reevaluate all commands', action='store_true',
                                           default=False)
         self.argument_parser.add_argument('--out', '-o', help="override output filename", type=str)
+        self.argument_parser.add_argument('--level', '-l', help='logging level', default='info',
+                                          choices=['debug', 'info', 'warning', 'error', 'critical'])
+        self.argument_parser.add_argument('--repeat', '-r', help='number of independent repetitions to run', type=int)
         self.argument_parser.add_argument('configuration_file', type=str, help='path to a JSON configuration file')
         self.argument_parser.add_argument('commands', type=str, nargs='+', help='commands to evaluate')
 
-        # Set up logging
         self.logger = logging.getLogger(self.name)
-        self.logger.setLevel(logging_level)
-        self.logger.addHandler(logging.StreamHandler(stdout))
-
-    def _setup(self, configuration):
-        """
-        Perform additional setup before evaluating commands.
-        """
-        pass
 
     def _get_configuration(self, key):
         """
@@ -89,25 +83,39 @@ class Pipeline(object):
             self.logger.critical(ex.message)
             raise
 
+        '''
         # Override the output file
         if self.arguments.out:
-            configuration['result_file'] = self.arguments.out
+            configuration['result_file'] = self._format_path(self.arguments.out)
         # Get a default output file
-        elif 'result_file' not in configuration:
-            base, ext = path.splitext(self.arguments.configuration_file)
-            configuration['result_file'] = base + '_result.json'
+        elif 'result_file' in configuration:
+            configuration['result_file'] = self._format_path(configuration['result_file'])
+        else:
+            msg = "'result_file' must be specified in the configuration or command line"
+            self.logger.critical(msg)
+            raise ValueError(msg)
+        '''
 
         return configuration, configuration_hash
 
-    def _load_result(self):
+    def _format_path(self, p):
+        if p.startswith('?/'):
+            return path.join(path.dirname(self.arguments.configuration_file), p[2:])
+        return p
+
+    def _load_result(self, repeat=None):
         """
         Load the previous result file and ensure the configuration matches.
         """
-        if path.exists(self.configuration['result_file']):
-            result = json_load(self.configuration['result_file'])
+        result_file = self._get_result_file(repeat)
+
+        if path.exists(result_file):
+            self.logger.info("loading results from '{}'".format(result_file))
+            result = json_load(result_file)
 
             if result['configuration']['hash'] != self.configuration_hash:
                 self.logger.info('configuration hash mismatch; deleting previous results')
+                result = {}
         else:
             result = {}
 
@@ -118,37 +126,74 @@ class Pipeline(object):
 
         return result
 
-    def _dump_result(self):
+    def _get_result_file(self, repeat=None):
+        # Get the result file
+        result_file = self.arguments.out or self.configuration.get('result_file', None)
+        # Check everything is ok
+        if not result_file:
+            msg = "'result_file' must be specified in the configuration or command line"
+            self.logger.critical(msg)
+            raise ValueError(msg)
+
+        # Nothing else to do if we aren't repeating the analysis
+        if repeat is None:
+            return self._format_path(result_file)
+
+        # Replace the placeholder with the repetition number
+        assert '$' in result_file, "'result_file' must contain $ placeholder if `repeat` is set"
+        return self._format_path(result_file.replace('$', str(repeat)))
+
+    def _get_repeat(self):
+        return self.arguments.repeat or self.configuration.get('repeat', None)
+
+    def _dump_result(self, repeat=None):
         """
         Dump the result of the pipeline to disk.
         """
         # Ensure the directory exists
-        dirname = path.dirname(self.configuration['result_file'])
+        result_file = self._get_result_file(repeat)
+
+        dirname = path.dirname(result_file)
         if dirname:
-            makedirs(dirname)
+            mkdir_p(dirname)
         # Dump the results to disk
-        self.logger.info("dumping results to '{}'".format(self.configuration['result_file']))
-        json_dump(self.result, self.configuration['result_file'], indent=2)
+        self.logger.info("dumping results to '{}'".format(result_file))
+        json_dump(self.result, result_file, indent=2)
 
     def run(self):
         """
         Run the pipeline.
         """
-        self.logger.info('{} {}'.format(self.name, vars(self.arguments)))
         # Get the arguments
         self.arguments = self.argument_parser.parse_args()
+        # Set up logging
+        self.logger.setLevel({'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING,
+                              'error': logging.ERROR, 'critical': logging.CRITICAL}[self.arguments.level])
+        self.logger.addHandler(logging.StreamHandler(stdout))
+        self.logger.info('{} {}'.format(self.name, vars(self.arguments)))
         # Load the configuration
         self.configuration, self.configuration_hash = self._load_configuration()
-        # Get previous results
-        self.result = self._load_result()
-        # Additional setup
-        self._setup(self.configuration.get('setup', {}))
-        # Iterate over all commands and execute them
-        for command in self.arguments.commands:
-            self.result[command] = self._evaluate(command)
 
-        self._dump_result()
+        repeat = self._get_repeat()
+        for i in range(repeat or 1):
+            # Get previous results
+            self.result = self._load_result(None if repeat is None else i)
+            # Iterate over all commands and execute them
+            for command in self.arguments.commands:
+                self._evaluate(command)
+
+            self._dump_result(None if repeat is None else i)
+            # Clear results
+            self.result = {}
+            self._reset()
+
         self.logger.info('Exit')
+
+    def _reset(self):
+        """
+        Reset the pipeline between repetitions.
+        """
+        pass
 
     def _evaluate(self, command):
         """
@@ -177,11 +222,19 @@ class Pipeline(object):
         result = fun(self._get_configuration(command), *args)
 
         self.logger.info("end command '{}'".format(command))
+        # Store the result
+        if result is not None:
+            self.result[command] = result
         return result
+
+    def show(self, _):
+        self.logger.info(json_dumps(self.result, cls=StringEncoder, indent=4))
 
     @property
     def _commands(self):
         """
         Get a dictionary of command names and implementations.
         """
-        raise NotImplementedError
+        return {
+            'show': (self.show, [])
+        }
