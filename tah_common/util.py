@@ -1,5 +1,7 @@
 import numpy as np
 import json, base64
+import errno
+from os import makedirs, path
 
 
 def autospace(x, num=50, mode='lin', factor=0.1):
@@ -98,6 +100,17 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder(self, obj)
 
 
+class StringEncoder(json.JSONEncoder):
+    """
+    JSON encoder that encodes unsupported types as strings.
+    """
+    def default(self, obj):
+        try:
+            return super(StringEncoder, self).default(obj)
+        except TypeError:
+            return repr(obj)
+
+
 def json_numpy_obj_hook(dictionary):
     """
     Decodes a previously encoded numpy ndarray with proper shape and dtype.
@@ -133,7 +146,7 @@ def json_load(f, encoding=None, cls=None, object_hook=None, parse_float=None, pa
     See json.load for details of the other parameters.
     """
     # Open a file if a string is given
-    if isinstance(f, str):
+    if isinstance(f, basestring):
         fp = open(f)
     elif isinstance(f, file):
         fp = f
@@ -178,12 +191,12 @@ def json_dump(obj, f, skipkeys=False, ensure_ascii=True, check_circular=True, al
     -----
     See json.dump for details of the other parameters.
     """
-    if isinstance(f, str):
+    if isinstance(f, basestring):
         fp = open(f, 'w')
     elif isinstance(f, file):
         fp = f
     else:
-        raise ValueError('`f` must be a file pointer or file name')
+        raise ValueError("`f` must be a file pointer or file name but got '{}'".format(f))
 
     # Load the data
     result = json.dump(obj, fp, skipkeys, ensure_ascii, check_circular, allow_nan, cls or NumpyEncoder, indent,
@@ -192,6 +205,19 @@ def json_dump(obj, f, skipkeys=False, ensure_ascii=True, check_circular=True, al
     # Close the file if we just opened it
     if isinstance(f, str):
         fp.close()
+
+
+def json_dumps(obj, skipkeys=False, ensure_ascii=True, check_circular=True, allow_nan=True, cls=None, indent=None,
+              separators=None, encoding='utf-8', default=None, sort_keys=False, **kwargs):
+    """
+    Convenience function to dump JSON to a string.
+
+    Notes
+    -----
+    See json.dumps for details of the parameters.
+    """
+    return json.dumps(obj, skipkeys, ensure_ascii, check_circular, allow_nan, cls or NumpyEncoder, indent,
+                       separators, encoding, default, sort_keys, **kwargs)
 
 
 def read(filename):
@@ -227,3 +253,21 @@ def recursive_update(self, other):
             recursive_update(self[key], value)
 
     return self
+
+
+def mkdir_p(p):
+    """
+    Create a directory if it does not exist.
+
+    Parameters
+    ----------
+    p : str
+        the directory to create
+    """
+    try:
+        makedirs(p)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and path.isdir(p):
+            pass
+        else:
+            raise
