@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 import logging, hashlib
 from sys import stdout
 from os import path
+from time import time
 
 
 class Pipeline(object):
@@ -35,6 +36,16 @@ class Pipeline(object):
         self.argument_parser.add_argument('commands', type=str, nargs='+', help='commands to evaluate')
 
         self.logger = logging.getLogger(self.name)
+        self._timings = {}
+
+    def _begin(self, name):
+        self._timings[name] = time()
+        self.logger.info("begin " + name)
+
+    def _end(self, name):
+        duration = time() - self._timings[name]
+        del self._timings[name]
+        self.logger.info("end {}: {} seconds".format(name, duration))
 
     def _get_configuration(self, key):
         """
@@ -82,19 +93,6 @@ class Pipeline(object):
         except IOError as ex:
             self.logger.critical(ex.message)
             raise
-
-        '''
-        # Override the output file
-        if self.arguments.out:
-            configuration['result_file'] = self._format_path(self.arguments.out)
-        # Get a default output file
-        elif 'result_file' in configuration:
-            configuration['result_file'] = self._format_path(configuration['result_file'])
-        else:
-            msg = "'result_file' must be specified in the configuration or command line"
-            self.logger.critical(msg)
-            raise ValueError(msg)
-        '''
 
         return configuration, configuration_hash
 
@@ -180,7 +178,9 @@ class Pipeline(object):
             self.result = self._load_result(None if repeat is None else i)
             # Iterate over all commands and execute them
             for command in self.arguments.commands:
+                self._begin(command)
                 self._evaluate(command)
+                self._end(command)
 
             self._dump_result(None if repeat is None else i)
             # Clear results
