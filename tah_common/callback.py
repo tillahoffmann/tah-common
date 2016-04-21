@@ -28,6 +28,9 @@ class PeriodicCallback(object):
         self.current = 0
 
     def __call__(self, *args, **kwargs):
+        if not self.period:
+            return
+
         if self.current < self.period:
             self.current += 1
         else:
