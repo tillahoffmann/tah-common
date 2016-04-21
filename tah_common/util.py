@@ -2,6 +2,9 @@ import numpy as np
 import json, base64
 import errno
 from os import makedirs, path
+import functools
+from time import time
+import logging
 
 
 def autospace(x, num=50, mode='lin', factor=0.1):
@@ -271,3 +274,35 @@ def mkdir_p(p):
             pass
         else:
             raise
+
+
+class timeit:
+    """
+    Time the execution of a function and log the results.
+
+    Parameters
+    ----------
+    logger : str
+        name of the logger
+    level : str
+        logging level for the reporting
+    """
+    def __init__(self, logger=None, level='debug'):
+        self.logger = logging.getLogger('tah_common.util' if logger is None else logger)
+        self.level = level.lower()
+
+    def __call__(self, func):
+        @functools.wraps(func)
+        def inner(*args, **kwargs):
+            # Call the function
+            begin = time()
+            result = func(*args, **kwargs)
+            end = time()
+            duration = end - begin
+            # Report the time
+            getattr(self.logger, self.level)("%s: %s", func.func_name, str(duration))
+            return result
+
+        return inner
+
+
