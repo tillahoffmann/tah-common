@@ -1,8 +1,10 @@
 from matplotlib import pyplot as plt
+from matplotlib import rcParams, rcParamsDefault
 import numpy as np
 import itertools as it
 from scipy.stats import gaussian_kde
 from .util import autospace
+from os import path
 
 
 def density_plot(samples, burn_in=0, name=None, value=None, bins=10, ax=None):
@@ -116,3 +118,95 @@ def trace_plot(samples, fun_values, burn_in=0, parameters=None, values=None):
     fig.tight_layout()
 
     return fig, (ax1, ax2)
+
+
+def get_style(style):
+    """
+    Get matplotlib style specification.
+
+    Parameters
+    ----------
+    style : str
+    """
+    # Use the default style or load it if it is available
+    if style in plt.style.available or path.exists(style) or style == 'default':
+        return style
+
+    # Construct a filename in the package
+    filename = path.join(path.dirname(path.realpath(__file__)), 'stylelib', style + '.mplstyle')
+    if path.exists(filename):
+        return filename
+
+    raise ValueError("could not locate style specification '{}'".format(style))
+
+
+def latexify(article_class, column_width=None, aspect=None, scale=None, reset=True, **kwargs):
+    """
+
+    Parameters
+    ----------
+    article_class
+    column_width
+    aspect
+    reset : bool
+    kwargs : dict
+    """
+    if reset:
+        params = dict(rcParamsDefault)
+    else:
+        params = {}
+
+    # Get the column width
+    column_widths = {
+        'koma': 418.25555,
+    }
+    column_width = (column_width or column_widths[article_class]) / 72.0
+
+    # Get the aspect ratio
+    aspect = aspect or 4.0 / 3
+
+    # Compute the figure size in inches
+    scale = scale or 0.75
+    params.update({
+        'figure.figsize': (column_width, column_width / aspect),
+    })
+
+    # Update all variables that should be scaled
+    scale_params = ['font.size', 'lines.linewidth', 'axes.linewidth', 'lines.markersize', 'lines.markeredgewidth',
+                    'patch.linewidth']
+    for param in scale_params:
+        params[param] *= scale
+
+    # Set any additional arguments
+    params.update(**kwargs)
+
+    # Set the rcParams
+    rcParams.update(params)
+
+    return rcParams
+
+
+def savefigs(fig, filename, *formats, **kwargs):
+    """
+    Save a figure in multiple formats.
+
+    Parameters
+    ----------
+    fig : Figure
+    filename : str
+    formats : list
+    """
+    if formats:
+        # Get the base name without extension
+        basename, ext = path.splitext(filename)
+        if ext:
+            formats = (ext,) + formats
+        # Iterate over all formats
+        for format in formats:
+            # Prepend a dot if necessary
+            if not format.startswith('.'):
+                format = '.' + format
+            # Save the file
+            fig.savefig(basename + format, **kwargs)
+    else:
+        fig.savefig(filename, **kwargs)
