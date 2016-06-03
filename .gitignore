@@ -64,3 +64,4 @@ target/
 .DS_Store
 
 styles_figures/
+examples/pipeline.json
