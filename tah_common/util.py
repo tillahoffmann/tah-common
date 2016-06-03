@@ -4,7 +4,7 @@ import errno
 from os import makedirs, path
 import functools
 from time import time
-import logging, copy_reg, types
+import logging
 
 
 def autospace(x, num=50, mode='lin', factor=0.1):
@@ -103,17 +103,6 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder(self, obj)
 
 
-class StringEncoder(json.JSONEncoder):
-    """
-    JSON encoder that encodes unsupported types as strings.
-    """
-    def default(self, obj):
-        try:
-            return super(StringEncoder, self).default(obj)
-        except TypeError:
-            return repr(obj)
-
-
 def json_numpy_obj_hook(dictionary):
     """
     Decodes a previously encoded numpy ndarray with proper shape and dtype.
@@ -132,6 +121,17 @@ def json_numpy_obj_hook(dictionary):
         return np.frombuffer(data, dictionary['dtype']).reshape(dictionary['shape'])
     # Return the original data if we cannot decode
     return dictionary
+
+
+class StringEncoder(json.JSONEncoder):
+    """
+    JSON encoder that encodes unsupported types as strings.
+    """
+    def default(self, obj):
+        try:
+            return super(StringEncoder, self).default(obj)
+        except TypeError:
+            return repr(obj)
 
 
 def json_load(f, encoding=None, cls=None, object_hook=None, parse_float=None, parse_int=None, parse_constant=None,
@@ -267,13 +267,42 @@ def mkdir_p(p):
     p : str
         the directory to create
     """
+    head, _ = path.split(p)
     try:
-        makedirs(p)
+        makedirs(head)
     except OSError as exc:  # Python >2.5
-        if exc.errno == errno.EEXIST and path.isdir(p):
+        if exc.errno == errno.EEXIST and path.isdir(head):
             pass
         else:
             raise
+
+
+class Timer(object):
+    """
+    Timer object that can be used as a `with` statement.
+    """
+    def __init__(self, message="duration : {0}", logger='print', level='info'):
+        self.logger = logger
+        self.level = level.lower()
+        self.start = self.end = self.duration = None
+        self.message = message
+
+    def __enter__(self):
+        self.start = time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time()
+        self.duration = self.end - self.start
+
+        # Format a message
+        message = self.message.format(self.duration)
+
+        if self.logger == 'print':
+            print message
+        elif self.logger:
+            logger = logging.getLogger(self.logger)
+            getattr(logger, self.level)(message)
 
 
 class timeit:
@@ -283,44 +312,22 @@ class timeit:
     Parameters
     ----------
     logger : str
-        name of the logger
+        name of the logger or 'print'
     level : str
         logging level for the reporting
     """
-    def __init__(self, logger=None, level='debug'):
-        self.logger = logging.getLogger('tah_common.util' if logger is None else logger)
+    def __init__(self, logger='print', level='info'):
+        self.logger = logger
         self.level = level.lower()
 
     def __call__(self, func):
         @functools.wraps(func)
         def inner(*args, **kwargs):
-            # Call the function
-            begin = time()
-            result = func(*args, **kwargs)
-            end = time()
-            duration = end - begin
-            # Report the time
-            getattr(self.logger, self.level)("%s: %s", func.func_name, str(duration))
-            return result
+            # Call the function wrapped in a timer
+            with Timer(func.func_name + " : {0}", self.logger, self.level):
+                return func(*args, **kwargs)
 
         return inner
-
-
-def enable_instance_multiprocessing():
-    """
-    Enable multiprocessing support for instance methods.
-
-    References
-    -----
-    http://stackoverflow.com/a/25161919/1150961
-    """
-    def _pickle_method(m):
-        if m.im_self is None:
-            return getattr, (m.im_class, m.im_func.func_name)
-        else:
-            return getattr, (m.im_self, m.im_func.func_name)
-
-    copy_reg.pickle(types.MethodType, _pickle_method)
 
 
 def negate(fun):
