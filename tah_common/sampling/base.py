@@ -1,5 +1,5 @@
 import numpy as np
-from ..plotting import trace_plot, grid_density_plot
+from ..plotting import trace_plot, grid_density_plot, comparison_plot
 import pandas as pd
 
 
@@ -78,6 +78,9 @@ class BaseSampler(object):
         """
         return grid_density_plot(self.samples, burn_in, None if parameters is None else
             {p: self.get_parameter_name(p) for p in parameters}, values, nrows, ncols, bins)
+
+    def comparison_plot(self, values, burn_in=0, parameters=None, ax=None, **kwargs):
+        return comparison_plot(self.samples, values, burn_in, parameters, ax, **kwargs)
 
     def acceptance_rate(self, burn_in=0):
         """
