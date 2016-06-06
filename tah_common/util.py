@@ -5,6 +5,7 @@ from os import makedirs, path
 import functools
 from time import time
 import logging
+from scipy import optimize
 
 
 def autospace(x, num=50, mode='lin', factor=0.1):
@@ -339,8 +340,18 @@ def negate(fun):
     fun : callable
         the function to negate
     """
-    @functools.wraps(fun)
-    def inner(*args, **kwargs):
-        return -fun(*args, **kwargs)
+    if fun:
+        @functools.wraps(fun)
+        def inner(*args, **kwargs):
+            return -fun(*args, **kwargs)
 
-    return inner
+        return inner
+    else:
+        return None
+
+
+@functools.wraps(optimize.minimize)
+def maximize(fun, x0, args=(), method=None, jac=None, hess=None, hessp=None, bounds=None, constraints=(), tol=None,
+             callback=None, options=None):
+    return optimize.minimize(negate(fun), x0, args, method, negate(jac), negate(hess), negate(hessp), bounds,
+                             constraints, tol, callback, options)
