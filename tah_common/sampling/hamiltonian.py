@@ -32,10 +32,11 @@ class HamiltonianSampler(BaseSampler):
                  leapfrog_steps=10):
         super(HamiltonianSampler, self).__init__(fun, args, parameter_names, break_on_interrupt)
         self.jac = jac
-        if type(mass) is str:
+        if isinstance(mass, str):
             self.mass = np.loadtxt(mass)
         else:
             self.mass = np.asarray(mass)
+        assert np.all(np.isfinite(mass)), '`mass` must be finite'
         self.epsilon = epsilon
         self.leapfrog_steps = leapfrog_steps
 
@@ -117,7 +118,7 @@ class HamiltonianSampler(BaseSampler):
         epsilon = epsilon or self.epsilon
 
         try:
-            for step in range(steps):
+            for step in steps if hasattr(steps, '__iter__') else range(steps):
                 # Sample the momentum
                 if self.mass.ndim < 2:
                     momentum = np.random.normal(0, 1, p) * np.sqrt(self.mass)
