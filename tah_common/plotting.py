@@ -159,6 +159,44 @@ def trace_plot(samples, fun_values, burn_in=0, parameters=None, values=None):
     return fig, (ax1, ax2)
 
 
+def comparison_plot(samples, values, burn_in=0, parameters=None, ax=None, **kwargs):
+    """
+    Plot inferred against actual parameters.
+
+    Parameters
+    ----------
+    samples
+    values
+    burn_in
+    parameters
+
+    Returns
+    -------
+
+    """
+    if parameters is None:
+        parameters = range(samples.shape[1])
+
+    assert len(parameters) == len(values), "shape mismatch"
+
+    data = []
+    for parameter, value in zip(parameters, values):
+        x = samples[burn_in:, parameter]
+        data.append((value, np.mean(x), np.std(x)))
+
+    x, y, yerr = np.transpose(data)
+    ax = ax or plt.gca()
+    kwargs_default = {
+        'ls': 'none',
+        'marker': '.',
+    }
+    kwargs_default.update(kwargs)
+    ax.errorbar(x, y, yerr, **kwargs_default)
+
+    xmin, xmax = np.min(values), np.max(values)
+    ax.plot((xmin, xmax), (xmin, xmax), color='k', ls=':')
+
+
 def get_style(style):
     """
     Get matplotlib style specification.
