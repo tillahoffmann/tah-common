@@ -2,9 +2,12 @@ from .util import json_load, json_dump, mkdir_p, json_dumps, StringEncoder, Time
 from argparse import ArgumentParser, Action
 import numpy as np
 from matplotlib import pyplot as plt
-from tqdm import tqdm, trange
+from tqdm import tqdm
 from os import path
-from sys import argv
+from sys import argv, stdout
+import logging
+import functools
+import hashlib
 
 
 class ValidateChoices(Action):
@@ -21,18 +24,61 @@ class Pipeline(object):
     """
     Abstract base class for pipelines.
 
-    Individual commands should be implemented as instance methods starting with `run_` and should return a value that
-    evaluates to `True` after a boolean cast to support caching.
+    Individual commands should be implemented as instance methods starting with `run_` and should return a falsy value
+    to not be cached on disk.
     """
-    def __init__(self, output_file=None, seed=None, verbose=True, force=False):
+    def __init__(self, output_file=None, seed=None, logger=True):
         self.commands = None
         self.seed = seed
-        self.verbose = verbose
         self.output_file = output_file
-        self.result = None
-        self.force = force
+        self.result = {}
+
+        # Set up loggers
+        if isinstance(logger, str):
+            self.logger = logging.getLogger(logging)
+        elif logger:
+            self.logger = logging.getLogger(self.__class__.__name__)
+            self.logger.setLevel(logging.DEBUG)
+            handler = logging.StreamHandler(stdout)
+            self.logger.addHandler(handler)
+        else:
+            self.logger = None
+
+        self.parser = ArgumentParser(argv[0])
+        self.arguments = []
+
+    def add_argument(self, name, *args, **kwargs):
+        name = name.strip('-')
+        if 'default' not in kwargs:
+            kwargs['default'] = getattr(self, name)
+        self.parser.add_argument('--' + name, *args, **kwargs)
+        self.arguments.append(name)
+
+    @property
+    def configuration(self):
+        return {argument: getattr(self, argument) for argument in self.arguments}
+
+    def log(self, level, message, *args, **kwargs):
+        if self.logger:
+            message = str(message).format(*args, **kwargs)
+            self.logger.log(level, message)
+
+    def info(self, message, *args, **kwargs):
+        self.log(logging.INFO, message, *args, **kwargs)
+
+    def warn(self, message, *args, **kwargs):
+        self.log(logging.WARN, message, *args, **kwargs)
+
+    def debug(self, message, *args, **kwargs):
+        self.log(logging.DEBUG, message, *args, **kwargs)
+
+    def critical(self, message, *args, **kwargs):
+        self.log(logging.CRITICAL, message, *args, **kwargs)
 
     def setup(self):
+        """
+        Set up the pipeline and load results.
+        """
         if self.output_file and path.exists(self.output_file):
             self.result = json_load(self.output_file)
         else:
@@ -49,23 +95,12 @@ class Pipeline(object):
         """
         Initialise the argument parser. Inheriting classes can override this function to add additional parameters.
         """
-        parser = ArgumentParser()
-        # Add optional arguments
-        if self.output_file:
-            output_file = self.output_file
-        elif argv[0]:
-            output_file, _ = path.splitext(path.abspath(argv[0]))
-            output_file = output_file + '.json'
-        else:
-            output_file = None
+        # Add all the positional arguments directly (they shouldn't be part of the configuration)
+        self.parser.add_argument('commands', nargs='*', help="commands to execute", action=ValidateChoices,
+                                 metavar=self.available_commands.keys())
 
-        parser.add_argument('--output_file', '-o', type=str, help="output file", default=output_file)
-        parser.add_argument('--seed', '-s', type=int, help="random number generator seed", default=self.seed)
-        parser.add_argument('--force', '-f', action='store_true', help="force reexecution of all commands",
-                            default=self.force)
-        parser.add_argument('commands', nargs='*', help="commands to execute", action=ValidateChoices,
-                            metavar=self.available_commands.keys())
-        return parser
+        self.add_argument('--output_file', '-o', type=str, help="output file", default=self.output_file)
+        self.add_argument('--seed', '-s', type=int, help="random number generator seed", default=self.seed)
 
     def parse_args(self):
         """
@@ -81,9 +116,9 @@ class Pipeline(object):
         args : NameSpace
             parsed command line arguments
         """
-        parser = self.init_argument_parser()
+        self.init_argument_parser()
         # Parse arguments
-        args = parser.parse_args()
+        args = self.parser.parse_args()
         # Update attributes
         self.__dict__.update(vars(args))
 
@@ -97,12 +132,18 @@ class Pipeline(object):
         # Get the specified commands or all commands
         commands = self.commands or self.available_commands
 
+        if not self.output_file and argv and argv[0]:
+            # Get the name of the script
+            script = path.split(argv[0])[-1]
+            basename = path.splitext(script)[0]
+            # Create a hash of the configuration
+            self.output_file = "{}_{}.json".format(basename, hashlib.md5(repr(self.configuration)).hexdigest())
+
         # Setup
         self.setup()
 
         # Run the commands
         for command in commands:
-            np.random.seed(self.seed)
             self.require(command)
 
         # Save the results
@@ -122,17 +163,19 @@ class Pipeline(object):
 
         Returns
         -------
-        result : object
+        result : any
             value returned by the command
         """
-        if command not in self.result or not self.result[command] or self.force:
-            self.write("========== Start    {} ==========", command)
+        if command not in self.result:
+            self.info("========== Start    {} ==========", command)
+            # Set the seed before each execution
+            np.random.seed(self.seed)
             with Timer(logger=None) as timer:
                 self.result[command] = self.available_commands[command]()
-            self.write("========== Executed {} in {:.3f} seconds ==========", command, timer.duration)
+            self.info("========== Executed {} in {:.3f} seconds ==========", command, timer.duration)
 
         else:
-            self.write("========== Cached   {} ==========", command)
+            self.info("========== Cached   {} ==========", command)
 
         return self.result[command]
 
@@ -146,260 +189,23 @@ class Pipeline(object):
             filename of the output file or `None` to use `self.output_file`
         """
         output_file = output_file or self.output_file
-        if output_file:
-            mkdir_p(output_file)
-            json_dump(self.result, output_file)
-        else:
+        if not output_file:
             raise ValueError('cannot save results because `output_file` was not specified')
 
-    def range(self, *args):
-        """
-        `tqdm.trange` if `verbose` is `True` else `range`.
-
-        Parameters
-        ----------
-        args : list
-            arguments passed to `tqdm.trange` or `range`
-
-        Returns
-        -------
-
-        """
-        if self.verbose:
-            return trange(*args)
-        else:
-            return range(*args)
-
-    def write(self, message, *args, **kwargs):
-        """
-        Write a message using `tqdm` if `verbose` is `True`.
-
-        Parameters
-        ----------
-        message : object
-        args : list
-        kwargs : dict
-        """
-        message = str(message).format(*args, **kwargs)
-
-        if self.verbose and hasattr(tqdm, '_instances'):
-            tqdm.write(message)
-        elif self.verbose:
-            print message
+        mkdir_p(output_file)
+        result = {key: value for key, value in self.result.iteritems() if value}
+        result['configuration'] = self.configuration
+        json_dump(result, output_file, indent=4)
 
     def run_show(self):
         """
         Show the results formatted as JSON.
         """
-        text = json_dumps(self.result, cls=StringEncoder)
+        text = json_dumps(self.result, cls=StringEncoder, indent=4)
         print text
-        # Do not support caching
-        return None
 
-
-
-'''
-class Pipeline(object):
-    """
-    Pipeline for processing data. Each command is implemented as an instance method without arguments.
-
-    Parameters
-    ----------
-    name : str
-        name of the pipeline
-    logging_level : int
-        logging level for the pipeline
-    """
-    def __init__(self, name, **configuration):
-        self.name = name
-        # Get the configuration
-        self.configuration = recursive_update(self._default_configuration(), configuration)
-        self.arguments = None
-        self.result = None
-
-        # Set up the argument parser
-        self.argument_parser = ArgumentParser(name)
-        self.argument_parser.add_argument('--force', '-f', help='reevaluate all commands', action='store_true',
-                                          default=False)
-        self.argument_parser.add_argument('--out', '-o', help="override output filename", type=str)
-        self.argument_parser.add_argument('--level', '-l', help='logging level', default='info',
-                                          choices=['debug', 'info', 'warning', 'error', 'critical'])
-        self.argument_parser.add_argument('commands', type=str, nargs='+', help='commands to evaluate')
-
-        self.logger = logging.getLogger(self.name)
-        self._timings = {}
-
-    def _begin(self, name):
-        self._timings[name] = time()
-        self.logger.info("begin " + name)
-
-    def _end(self, name):
-        duration = time() - self._timings[name]
-        del self._timings[name]
-        self.logger.info("end {}: {} seconds".format(name, duration))
-
-    def _get_configuration(self, key):
-        """
-        Get the configuration for a command.
-        Parameters
-        ----------
-        key : str
-            the command to get the configuration for
-        """
-        # Empty values
-        if key not in self.configuration:
-            return {}
-
-        # Get the configuration recursively
-        if isinstance(self.configuration[key], basestring):
-            configuration = self._get_configuration(self.configuration[key])
-        else:
-            configuration = self.configuration[key]
-
-        # Check type
-        if not isinstance(configuration, dict):
-            msg = "configuration for '{}' must be a dictionary".format(key)
-            self.logger.critical(msg)
-            raise ValueError(msg)
-
-        return configuration
-
-    def _default_configuration(self):
-        """
-        Get the default configuration.
-        """
-        return {}
-
-    def _format_path(self, p):
-        if p.startswith('?/'):
-            return path.join(path.dirname(self.arguments.configuration_file), p[2:])
-        return p
-
-    def _load_result(self, repeat=None):
-        """
-        Load the previous result file and ensure the configuration matches.
-        """
-        result_file = self._get_result_file(repeat)
-
-        if path.exists(result_file):
-            self.logger.info("loading results from '{}'".format(result_file))
-            result = json_load(result_file)
-        else:
-            self.logger.info("creating new result set for '{}'".format(result_file))
-            result = {}
-
-        # Set the configuration for reference
-        result['configuration'] = self.configuration
-
-        return result
-
-    def _get_result_file(self, repeat=None):
-        # Get the result file
-        result_file = self.arguments.out or self.configuration.get('result_file', None)
-        # Check everything is ok
-        if not result_file:
-            msg = "'result_file' must be specified in the configuration or command line"
-            self.logger.critical(msg)
-            raise ValueError(msg)
-
-        # Nothing else to do if we aren't repeating the analysis
-        if repeat is None:
-            return self._format_path(result_file)
-
-        # Replace the placeholder with the repetition number
-        assert '$' in result_file, "'result_file' must contain $ placeholder if `repeat` is set"
-        return self._format_path(result_file.replace('$', str(repeat)))
-
-    def _dump_result(self, repeat=None):
-        """
-        Dump the result of the pipeline to disk.
-        """
-        # Ensure the directory exists
-        result_file = self._get_result_file(repeat)
-
-        dirname = path.dirname(result_file)
-        if dirname:
-            mkdir_p(dirname)
-        # Dump the results to disk
-        self.logger.info("dumping results to '{}'".format(result_file))
-        json_dump(self.result, result_file, indent=2)
-
-    def run(self):
-        """
-        Run the pipeline.
-        """
-        # Get the arguments
-        self.arguments = self.argument_parser.parse_args()
-        # Set up logging
-        self.logger.setLevel({'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING,
-                              'error': logging.ERROR, 'critical': logging.CRITICAL}[self.arguments.level])
-        self.logger.addHandler(logging.StreamHandler(stdout))
-        self.logger.info('{} {}'.format(self.name, vars(self.arguments)))
-
-        repeat = self.configuration.get('repeat', None)
-        for i in range(repeat or 1):
-            # Get previous results
-            self.result = self._load_result(None if repeat is None else i)
-            # Iterate over all commands and execute them
-            for command in self.arguments.commands:
-                self._begin(command)
-                self._execute(command)
-                self._end(command)
-
-            self._dump_result(None if repeat is None else i)
-            # Clear results
-            self.result = {}
-            self._reset()
-
-        self.logger.info('Exit')
-
-    def _reset(self):
-        """
-        Reset the pipeline between repetitions.
-        """
-        pass
-
-    def _execute(self, command):
-        """
-        Evaluate a command.
-
-        Parameters
-        ----------
-        command : str
-            name of the command to evaluate
-        """
-        # Check the command exists
-        if command not in self._commands:
-            msg = "'{}' is not a recognised command".format(command)
-            self.logger.critical(msg)
-            raise KeyError(msg)
-
-        # Check whether the commands have already been evaluated
-        if command in self.result and not self.arguments.force:
-            self.logger.info("command '{}' has already been evaluated".format(command))
-            return self.result[command]
-        else:
-            self.logger.info("begin command '{}'".format(command))
-
-        # Execute the command
-        fun, args = self._commands[command]
-        result = fun(self._get_configuration(command), *args)
-
-        self.logger.info("end command '{}'".format(command))
-        # Store the result
-        if result is not None:
-            self.result[command] = result
-        return result
-
-    def show(self, _):
-        self.logger.info(json_dumps(self.result, cls=StringEncoder, indent=4))
-
-    @property
-    def _commands(self):
-        """
-        Get a dictionary of command names and implementations.
-        """
-        return {
-            'show': (self.show, [])
-        }
-'''
+    @functools.wraps(tqdm)
+    def tqdm(self, *args, **kwargs):
+        if 'disable' not in kwargs:
+            kwargs['disable'] = self.logger is None
+        return tqdm(*args, **kwargs)
