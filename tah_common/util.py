@@ -269,6 +269,8 @@ def mkdir_p(p):
         the directory to create
     """
     head, _ = path.split(p)
+    if not head:
+        return
     try:
         makedirs(head)
     except OSError as exc:  # Python >2.5
