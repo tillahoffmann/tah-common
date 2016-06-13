@@ -156,6 +156,9 @@ def trace_plot(samples, fun_values, burn_in=0, parameters=None, values=None):
 
     fig.tight_layout()
 
+    x = samples[burn_in:]
+    print "Acceptance ratio: {}".format(np.mean(x[1:] != x[:-1]))
+
     return fig, (ax1, ax2)
 
 
