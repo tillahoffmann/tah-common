@@ -32,7 +32,7 @@ class MetropolisSampler(BaseSampler):
         parameters = np.asarray(parameters)
 
         try:
-            for step in range(steps):
+            for step in steps if hasattr(steps, '__iter__') else range(steps):
                 # Evaluate the current function value
                 if len(self._fun_values) == 0 or self.mode == 'reevaluate':
                     fun_current = self.fun(parameters, *self.args)
